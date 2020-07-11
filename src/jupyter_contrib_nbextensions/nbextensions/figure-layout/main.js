@@ -77,11 +77,6 @@ define([
   var unselected_color = "#A0A0A0";
   var selected_color = "#FF0000";
 
-  // global state
-  // var canvas_width = 640;
-  // var canvas_height = 480;
-  // var figure_state.subplots = []
-
   var figure_state = {canvas_width: 8, canvas_height: 6, letter_font_size: 16, subplots: []};
 
 
@@ -96,6 +91,7 @@ define([
   var clicked_subplot = -1;
   var clicked_corner = [-1, -1];
   var clicked_edge = "none";
+  var clicked_subplot_area = 1e9;
 
   var idx_to_align = -1;
   var idx_align_ref = -1;
@@ -122,7 +118,8 @@ define([
       let subplot = figure_state.subplots[i];
       let x_bounds = [subplot.left, subplot.left + subplot.width];
       let y_bounds = [subplot.top, subplot.top + subplot.height];
-      if (start_x > x_bounds[0] && start_x < x_bounds[1] && start_y > y_bounds[0] && start_y < y_bounds[1]) {
+      let subplot_area = (y_bounds[1] - y_bounds[0]) * (x_bounds[1] - x_bounds[0]);
+      if (start_x > x_bounds[0] && start_x < x_bounds[1] && start_y > y_bounds[0] && start_y < y_bounds[1] && subplot_area < clicked_subplot_area) {
         clicked_subplot = i;
 
         // determine if a corner was clicked
@@ -151,7 +148,7 @@ define([
           } 
         }
 
-        break; // TODO do overlapping subplots make sense? like inset plots?
+        
       }
     }
 
@@ -207,6 +204,7 @@ define([
   }
 
   function unselect(subplot) {
+    console.log("unselect subplot " + subplot.letter);
     subplot.color = unselected_color;
     subplot.selected = false;
 
@@ -216,7 +214,7 @@ define([
   function select(subplot) {
     console.log("Selecting subplot ", subplot.letter);
     subplot.color = selected_color;
-    subplot.selected = !subplot.selected; // toggle selection
+    subplot.selected = true; // toggle selection
 
     $("#edit_selected_subplot").show();
     $("#subplot_letter_input").val(subplot.letter);
@@ -238,7 +236,7 @@ define([
       let width = Math.abs(start_x - end_x);
       let height = Math.abs(start_y - end_y);
 
-      if (width < 15 && height < 15) {
+      if (width < 15 || height < 15) {
         // clear selection,i.e. you can't make a tiny subplot
         for (let i = 0; i < figure_state.subplots.length; i += 1) {
           unselect(figure_state.subplots[i]);
@@ -248,21 +246,26 @@ define([
           width, height);
         figure_state.subplots.push(subplot);
 
+        select(subplot);
+
         // increment letter for next plot
         current_letter = String.fromCharCode(current_letter.charCodeAt(0) + 1);
       }
     } else if (state == "move") {
-      displ_x = end_x - start_x;
-      displ_y = end_y - start_y;
+      displ_x = Math.abs(end_x - start_x);
+      displ_y = Math.abs(end_y - start_y);
 
       var subplot = figure_state.subplots[clicked_subplot];
       if (displ_x < 5 && displ_y < 5) {
         select(subplot);
       } else {
         // move action
-        subplot.top += displ_y;
-        subplot.left += displ_x;
+        subplot.left += end_x - start_x;
+        subplot.top += end_y - start_y;
       }
+
+      // select for future actions
+      select(subplot);
     } else if (state == "resize") {
       var subplot = figure_state.subplots[clicked_subplot];
       let x_bounds = [subplot.left, subplot.left + subplot.width];
@@ -322,6 +325,9 @@ define([
           subplot.height -= y_displ;
         }
       }
+
+      // select for future actions
+      select(subplot);
     } else if (state == "none") {
       // pass
     }
@@ -329,6 +335,7 @@ define([
     clicked_subplot = -1;
     clicked_corner = [-1, -1];
     clicked_edge = "none";
+    clicked_subplot_area = 1e9;
     state = "none"
 
     draw();
@@ -476,12 +483,71 @@ define([
     draw();
   }
 
+  // keydown handler
   document.addEventListener("keydown", event => {
     if (event.keyCode == 90 && event.ctrlKey) {
       figure_state.subplots.pop();
-      draw();
+      
     }
+
+    selected_subplots = [];
+    for (let i = 0; i < figure_state.subplots.length; i += 1) {
+      if (figure_state.subplots[i].selected) {
+        selected_subplots.push(i);
+      }
+    }
+
+    console.log("keydown", event.keyCode, selected_subplots, figure_state.subplots);
+
+    // arrow keys
+    let displ = 5;
+    if (event.keyCode == 37) { // left arrow
+      console.log("move left");
+      for (let i = 0; i < selected_subplots.length; i += 1) {
+        let idx = selected_subplots[i];
+        figure_state.subplots[idx].left -= displ;
+      }
+    } else if (event.keyCode == 39) { // right arrow
+      console.log("move right");
+      for (let i = 0; i < selected_subplots.length; i += 1) {
+        let idx = selected_subplots[i];
+        figure_state.subplots[idx].left += displ;
+      }
+    } else if (event.keyCode == 38) { // up arrow
+      console.log("move up");
+      for (let i = 0; i < selected_subplots.length; i += 1) {
+        let idx = selected_subplots[i];
+        figure_state.subplots[idx].top -= displ;
+      }
+    } else if (event.keyCode == 40) { // down arrow
+      console.log("move down");
+      for (let i = 0; i < selected_subplots.length; i += 1) {
+        let idx = selected_subplots[i];
+        figure_state.subplots[idx].top += displ;
+      }
+    }
+
+    if (event.keyCode == 67 && selected_subplots.length == 1) { // ctrl+c
+      console.log("copy")
+      let subplot = figure_state.subplots[selected_subplots[0]];
+      // TODO let user select where to place the new subplot
+      let new_subplot = create_new_subplot(subplot.left, subplot.top + subplot.height, subplot.width, subplot.height);
+      figure_state.subplots.push(new_subplot);
+    }
+
+    if (event.keyCode == 68) { // ctrl + d=> delete
+      console.log("delete")
+      figure_state.subplots = figure_state.subplots.filter(x => !x.selected);
+    }
+
+    // only redraw if something moved
+    if (selected_subplots.length > 0) {
+      console.log('redrawing');
+      draw();  
+    }
+    
   });
+
 
   function update_figure_canvas() {
     figure_state.canvas_width = parseInt($("#canvas_width_input").val());
@@ -548,6 +614,10 @@ define([
       let curr_text_lines = curr_text.split("\n");
       figure_state = JSON.parse(curr_text_lines[curr_text_lines.length - 1].substring(2));
       console.log(figure_state);
+
+      for (let i = 0; i < figure_state.subplots.length; i += 1) {
+        unselect(figure_state.subplots[i]);
+      }
     } else {
       curr_cell.set_text(`# Select your plot below`);
     }

@@ -1,8 +1,3 @@
-# Installation
-- Install jupyter nbextensions: https://jupyter-contrib-nbextensions.readthedocs.io/en/latest/install.html
-- Find where the nbextensions get installed to using `jupyter --paths`. For each path listed, see if there is a path $PATH/nbextensions.
-This varies by setup. 
-- go to the nbextensions folder and clone this repository
-- rerun `jupyter contrib nbextension install --user` to install the extension
-- Enable the extension. Start `jupyter notebook`, click the 'nbextensions' tab, and enable the "Figure layout" extension
-- Open a new notebook and begin using the widget!
+# figure-layout
+
+This extension may be useful to matplotlib users who want to create intricate plot layouts, such as for scientific publications, which would normally be more convenient in a non-python graphical tool such as Inkscape or Photoshop. 
