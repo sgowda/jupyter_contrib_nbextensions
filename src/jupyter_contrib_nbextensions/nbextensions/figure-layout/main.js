@@ -78,6 +78,9 @@ define([
   var selected_color = "#FF0000";
 
   var figure_state = {canvas_width: 8, canvas_height: 6, letter_font_size: 16, subplots: []};
+  var prev_state = {};
+
+  var state_history = []; // for implementing the undo action via ctrl-Z
 
 
   var start_x = -1;
@@ -98,6 +101,7 @@ define([
   var align_edge = "left";
 
   var current_letter = 'A';
+  var key_state_changed = false;
 
   function mousedown_callback(event) {
     console.log("mousedown");
@@ -147,8 +151,6 @@ define([
             clicked_edge = "y1";
           } 
         }
-
-        
       }
     }
 
@@ -156,6 +158,7 @@ define([
     let edge_was_clicked = clicked_edge != "none";
     if (clicked_subplot >= 0) {
       if (state == "align") {
+        save_state_history();
         idx_align_ref = clicked_subplot;
 
         let subplot_to_align = figure_state.subplots[idx_to_align];
@@ -220,6 +223,12 @@ define([
     $("#subplot_letter_input").val(subplot.letter);
   }
 
+  function save_state_history() {
+    let state_copy = JSON.parse(JSON.stringify(figure_state));
+    state_history.push(state_copy);
+    console.log("Saved state. Length = ", state_history.length);
+  }
+
   function mouseup_callback(event) {
     let elem = document.getElementById('canv2');
     let rect = elem.getBoundingClientRect();
@@ -242,6 +251,8 @@ define([
           unselect(figure_state.subplots[i]);
         }
       } else {
+        save_state_history();
+
         let subplot = create_new_subplot(Math.min(start_x, end_x), Math.min(start_y, end_y),
           width, height);
         figure_state.subplots.push(subplot);
@@ -259,6 +270,8 @@ define([
       if (displ_x < 5 && displ_y < 5) {
         select(subplot);
       } else {
+        save_state_history();
+
         // move action
         subplot.left += end_x - start_x;
         subplot.top += end_y - start_y;
@@ -273,6 +286,8 @@ define([
 
       let corner_was_clicked = clicked_corner[0] != -1 && clicked_corner[1] != -1;
       let edge_was_clicked = clicked_edge != "none";
+
+      save_state_history();
 
       if (corner_was_clicked) {
         let corner_displ_x = x_bounds[clicked_corner[0]] - end_x;
@@ -486,8 +501,11 @@ define([
   // keydown handler
   document.addEventListener("keydown", event => {
     if (event.keyCode == 90 && event.ctrlKey) {
-      figure_state.subplots.pop();
-      
+      if (state_history.length > 0) {
+        figure_state = state_history.pop();
+        console.log("ctrl + z, state_history.length: ", state_history.length);
+        draw();
+      }
     }
 
     selected_subplots = [];
@@ -497,47 +515,66 @@ define([
       }
     }
 
-    console.log("keydown", event.keyCode, selected_subplots, figure_state.subplots);
-
     // arrow keys
     let displ = 5;
-    if (event.keyCode == 37) { // left arrow
-      console.log("move left");
-      for (let i = 0; i < selected_subplots.length; i += 1) {
-        let idx = selected_subplots[i];
-        figure_state.subplots[idx].left -= displ;
+    if (selected_subplots.length > 0 && (event.keyCode >= 37 && event.keyCode <= 40)) {
+      if (!key_state_changed) {
+        save_state_history();
       }
-    } else if (event.keyCode == 39) { // right arrow
-      console.log("move right");
-      for (let i = 0; i < selected_subplots.length; i += 1) {
-        let idx = selected_subplots[i];
-        figure_state.subplots[idx].left += displ;
-      }
-    } else if (event.keyCode == 38) { // up arrow
-      console.log("move up");
-      for (let i = 0; i < selected_subplots.length; i += 1) {
-        let idx = selected_subplots[i];
-        figure_state.subplots[idx].top -= displ;
-      }
-    } else if (event.keyCode == 40) { // down arrow
-      console.log("move down");
-      for (let i = 0; i < selected_subplots.length; i += 1) {
-        let idx = selected_subplots[i];
-        figure_state.subplots[idx].top += displ;
-      }
+
+      if (event.keyCode == 37) { // left arrow
+        console.log("move left");
+        for (let i = 0; i < selected_subplots.length; i += 1) {
+          let idx = selected_subplots[i];
+          figure_state.subplots[idx].left -= displ;
+        }
+        key_state_changed = true;
+      } else if (event.keyCode == 39) { // right arrow
+        console.log("move right");
+        for (let i = 0; i < selected_subplots.length; i += 1) {
+          let idx = selected_subplots[i];
+          figure_state.subplots[idx].left += displ;
+        }
+        key_state_changed = true;
+      } else if (event.keyCode == 38) { // up arrow
+        console.log("move up");
+        for (let i = 0; i < selected_subplots.length; i += 1) {
+          let idx = selected_subplots[i];
+          figure_state.subplots[idx].top -= displ;
+        }
+        key_state_changed = true;
+      } else if (event.keyCode == 40) { // down arrow
+        console.log("move down");
+        for (let i = 0; i < selected_subplots.length; i += 1) {
+          let idx = selected_subplots[i];
+          figure_state.subplots[idx].top += displ;
+        }
+        key_state_changed = true;
+      }      
     }
 
+
     if (event.keyCode == 67 && selected_subplots.length == 1) { // ctrl+c
+      if (!key_state_changed) {
+        save_state_history();
+      }
+
       console.log("copy")
       let subplot = figure_state.subplots[selected_subplots[0]];
       // TODO let user select where to place the new subplot
       let new_subplot = create_new_subplot(subplot.left, subplot.top + subplot.height, subplot.width, subplot.height);
       figure_state.subplots.push(new_subplot);
+
+      key_state_changed = true;
     }
 
     if (event.keyCode == 68) { // ctrl + d=> delete
+      if (!key_state_changed) {
+        save_state_history();
+      }
       console.log("delete")
       figure_state.subplots = figure_state.subplots.filter(x => !x.selected);
+      key_state_changed = true;
     }
 
     // only redraw if something moved
@@ -547,6 +584,12 @@ define([
     }
     
   });
+
+  document.addEventListener("keyup", event => {
+    if (key_state_changed) {
+      key_state_changed = false;
+    }
+  })
 
 
   function update_figure_canvas() {
@@ -658,18 +701,28 @@ define([
     div_fig.appendChild(document.createElement("br"));
     $("#div_fig").append(letter_font_size);
 
+    make_input_and_label("Canvas width: ", "canvas_width_input", "div_fig", {"size": 5, "title": "width in inches. Common sizes:\n- matplotlib default: 8 in\n- Powerpoint: 13.33 in\n- IEEE single column: 3.5 in\n- IEEE double column: 7.16 in"});
+    $("#canvas_width_input").val(figure_state.canvas_width);
 
-    let width_options = [{val: 8, text: 'MPL default (8")'}, {val: 13.33, text: 'powerpoint (13.3"'}, 
-      {val: 3.5, text: 'IEEE single column (3.5")'}, {val: 7.16, text: 'IEEE double column (7.16")'}];
-    make_selector_and_label("Canvas width: ", "canvas_width_input", "div_fig", width_options);
-
-    make_input_and_label("Canvas height: ", "canvas_height_input", "div_fig", {"size": 5});
+    make_input_and_label("Canvas height: ", "canvas_height_input", "div_fig", {"size": 5, "title": "height in inches"});
     $("#canvas_height_input").val(figure_state.canvas_height);
 
     let canvas_update_btn = $("<button>")
       .attr({"id": "canvas_update_btn"}).html("Update canvas")
       .appendTo("#div_fig");
     canvas_update_btn.click(update_figure_canvas);
+
+
+    // create canvas
+    let canvas_width_px = figure_state.canvas_width * dpi;
+    let canvas_height_px = figure_state.canvas_height * dpi;
+    var canvas = document.createElement("canvas");
+    div.appendChild(canvas);
+    canvas.setAttribute("id", "canv2");
+    canvas.setAttribute("style", "border:1px solid #000000;"); //  margin-left:150px
+    canvas.setAttribute("width", canvas_width_px);
+    canvas.setAttribute("clientWidth", canvas_width_px);
+    canvas.setAttribute("height", canvas_height_px);    
 
 
     // HTML elements once you select subplot(s)
@@ -711,19 +764,6 @@ define([
     let align_select_second_label = $("<label>").attr({"id": "align_select_second_label"}).text("Select reference subplot for alignment")
       .appendTo("#edit_selected_subplot");
     align_select_second_label.hide();
-
-
-
-    // create canvas
-    let canvas_width_px = figure_state.canvas_width * dpi;
-    let canvas_height_px = figure_state.canvas_height * dpi;
-    var canvas = document.createElement("canvas");
-    div.appendChild(canvas);
-    canvas.setAttribute("id", "canv2");
-    canvas.setAttribute("style", "border:1px solid #000000;"); //  margin-left:150px
-    canvas.setAttribute("width", canvas_width_px);
-    canvas.setAttribute("clientWidth", canvas_width_px);
-    canvas.setAttribute("height", canvas_height_px);    
     
 
     // set HTML attributes. do this *after* you've added new elements to the doc
@@ -744,9 +784,14 @@ define([
     $("#subplot_letter_input").focus(input_field_focus).blur(input_field_blur);
     $("#vertical_splits_input").focus(input_field_focus).blur(input_field_blur);
     $("#horiz_splits_input").focus(input_field_focus).blur(input_field_blur);
+    $("#canvas_width_input").focus(input_field_focus).blur(input_field_blur);
     $("#canvas_height_input").focus(input_field_focus).blur(input_field_blur);
 
     $("#subplot_letter_input").on('change input', update_subplot_letter);
+
+    // store copy of state for undo actions later
+    let state_copy = JSON.parse(JSON.stringify(figure_state));
+    state_history.push(state_copy);
 
     draw();
   };
@@ -756,7 +801,7 @@ define([
     Jupyter.toolbar.add_buttons_group([
       Jupyter.keyboard_manager.actions.register({
         'help': 'Add figure layout generator',
-        'icon': 'fa-play-circle',
+        'icon': 'fa-window-restore',
         'handler': add_cell
       }, 'add-default-cell', 'Default cell')
     ])
