@@ -414,6 +414,8 @@ define([
     let canvas_width_px = figure_state.canvas_width * dpi;
     let canvas_height_px = figure_state.canvas_height * dpi;
 
+    str += "axes_data = [ # (name of axis, label, rectangle dim.)\n";
+
     for (i = 0; i < figure_state.subplots.length; i += 1) {
       subplot = figure_state.subplots[i];
 
@@ -422,9 +424,22 @@ define([
       let py_x0 = subplot.left / canvas_width_px;
       let py_y0 = 1 - (subplot.top / canvas_height_px) - py_height;
 
-      str += `ax${subplot.letter} = fig.add_axes([${py_x0.toFixed(2)}, ${py_y0.toFixed(2)}, ${py_width.toFixed(2)}, ${py_height.toFixed(2)}])\n`;
-      str += `fig.text(${py_x0.toFixed(2)}, ${(py_y0 + py_height).toFixed(2)}, "${subplot.letter}", fontsize=${figure_state.letter_font_size}, va='bottom', ha='right')\n`
+      let subplot_letter = subplot.letter;
+      if (subplot_letter.length == 0) {
+        subplot_letter += i;
+      }
+      str += `    ("${subplot_letter}", '${subplot.letter}', [${py_x0.toFixed(2)}, ${py_y0.toFixed(2)}, ${py_width.toFixed(2)}, ${py_height.toFixed(2)}]),\n`;
+
+      // str += `ax${subplot_letter} = fig.add_axes([${py_x0.toFixed(2)}, ${py_y0.toFixed(2)}, ${py_width.toFixed(2)}, ${py_height.toFixed(2)}])\n`;
+      // str += `fig.text(${py_x0.toFixed(2)}, ${(py_y0 + py_height).toFixed(2)}, "${subplot.letter}", fontsize=${figure_state.letter_font_size}, va='bottom', ha='right')\n`
     }
+    str += "]\n";
+    str += `axes = []
+for ax_idx, ltr, rect in axes_data:
+    ax = fig.add_axes(rect)
+    axes.append(ax)
+    fig.text(rect[0], rect[1] + rect[3], ltr, fontsize=${figure_state.letter_font_size}, va='bottom', ha='right')
+`
 
     // inject new cell into the notebook
     Jupyter.notebook.insert_cell_below('code').set_text(str);
