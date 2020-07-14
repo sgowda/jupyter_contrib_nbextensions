@@ -89,7 +89,7 @@ define([
   var end_y = -1;
   
 
-
+  // volatile state, to be reset on startup
   var state = "none";
   var clicked_subplot = -1;
   var clicked_corner = [-1, -1];
@@ -99,6 +99,7 @@ define([
   var idx_to_align = -1;
   var idx_align_ref = -1;
   var align_edge = "left";
+  var idx_to_copy = -1;
 
   var current_letter = 'A';
   var key_state_changed = false;
@@ -116,6 +117,23 @@ define([
     let rel_loc = getRelativeCoordinates(event, elem);
     start_x = rel_loc.x;
     start_y = rel_loc.y;
+
+    if (state == "copy") {
+      save_state_history();
+
+      // make object copy
+      let subplot = figure_state.subplots[idx_to_copy];
+      let new_subplot = create_new_subplot(start_x, start_y, subplot.width, subplot.height);
+      figure_state.subplots.push(new_subplot);
+
+      // reset state
+      $("#canvas_ui_command").text("");
+      idx_to_copy = -1;
+      state = "none";
+
+      // draw
+      return;
+    }
 
     var margin = 10;
     for (i = 0; i < figure_state.subplots.length; i += 1) {
@@ -193,7 +211,7 @@ define([
         idx_align_ref = -1;
         subplot_to_align.selected = false;
         ref_subplot.selected = false;
-        $("#align_select_second_label").hide();
+        $("#canvas_ui_command").text("");
       } else if (corner_was_clicked || edge_was_clicked) {
         state = "resize";
       } else {
@@ -413,6 +431,7 @@ define([
   }
 
   function clear() {
+    save_state_history();
     figure_state.subplots = [];
     draw();
   }
@@ -555,17 +574,11 @@ define([
 
 
     if (event.keyCode == 67 && selected_subplots.length == 1) { // ctrl+c
-      if (!key_state_changed) {
-        save_state_history();
-      }
-
       console.log("copy")
-      let subplot = figure_state.subplots[selected_subplots[0]];
-      // TODO let user select where to place the new subplot
-      let new_subplot = create_new_subplot(subplot.left, subplot.top + subplot.height, subplot.width, subplot.height);
-      figure_state.subplots.push(new_subplot);
-
-      key_state_changed = true;
+      idx_to_copy = selected_subplots[0];
+      $("#canvas_ui_command").text("Click where you want the copied subplot")
+      // copy will occur on the next mousedown
+      state = "copy";
     }
 
     if (event.keyCode == 68) { // ctrl + d=> delete
@@ -614,7 +627,7 @@ define([
       state = "align";
       align_edge = $("#align_point").val();
 
-      $("#align_select_second_label").show();
+      $("#canvas_ui_command").text("Select reference subplot for alignment");
     }
   }
 
@@ -685,6 +698,8 @@ define([
     div.appendChild(div_fig);
     
     // figure-level HTML elements
+    $("<label>").text("Keyboard shortcuts: Undo (ctrl+z), Copy (ctrl+c)").appendTo("#div_fig");
+    $("<br>").appendTo("#div_fig");
     var generate_button = document.createElement("BUTTON");
     generate_button.innerHTML = "Generate python cell"
     generate_button.addEventListener("click", generate_code, false);
@@ -697,8 +712,9 @@ define([
     letter_font_size.append($("<input>").attr({'id': 'letter_font_size', 'value':16, 'size': 5}));
 
     div_fig.appendChild(generate_button);
-    div_fig.appendChild(clear_button);
     div_fig.appendChild(document.createElement("br"));
+    div_fig.appendChild(clear_button);
+    
     $("#div_fig").append(letter_font_size);
 
     make_input_and_label("Canvas width: ", "canvas_width_input", "div_fig", {"size": 5, "title": "width in inches. Common sizes:\n- matplotlib default: 8 in\n- Powerpoint: 13.33 in\n- IEEE single column: 3.5 in\n- IEEE double column: 7.16 in"});
@@ -709,9 +725,12 @@ define([
 
     let canvas_update_btn = $("<button>")
       .attr({"id": "canvas_update_btn"}).html("Update canvas")
-      .appendTo("#div_fig");
-    canvas_update_btn.click(update_figure_canvas);
+      .appendTo("#div_fig")
+      .click(update_figure_canvas);
 
+    $("<br>").appendTo("#div_fig");
+    let canvas_ui_command = $("<label>").attr({"id": "canvas_ui_command"}).text("")
+      .appendTo("#div_fig");
 
     // create canvas
     let canvas_width_px = figure_state.canvas_width * dpi;
@@ -731,39 +750,40 @@ define([
     div_selected.setAttribute("id", "edit_selected_subplot");
     div.appendChild(div_selected);    
 
-    let axis_letter = make_input_and_label("Axis letter", "subplot_letter_input", "edit_selected_subplot", {"size": "5"});
+    let div_selected_table = $("<table>").attr({"id": "subplot_selected_table", "style": "padding: 15px"}).appendTo("#edit_selected_subplot");
 
-    $("<br>").appendTo("#edit_selected_subplot");
+    let label_row = $("#subplot_selected_table").append("<tr>").children("tr:last").append("<td>Label</td>").append("<td id=label_row style='padding-left: 10px'>");
+    let split_row = $("#subplot_selected_table").append("<tr>").children("tr:last").append("<td>Split</td>").append("<td id=split_row style='padding-left: 10px'>");
+    let align_row = $("#subplot_selected_table").append("<tr>").children("tr:last").append("<td>Align</td>").append("<td id=align_row style='padding-left: 10px'>");
+    let copy_row = $("#subplot_selected_table").append("<tr>").children("tr:last").append("<td>Copy</td>").append("<td id=copy_row style='padding-left: 10px'>Press ctrl+c</td>");
+
+    // labels
+    let axis_letter = make_input_and_label("Axis letter", "subplot_letter_input", "label_row", {"size": "5"});
 
     // Splitting
-    let v_splits = make_input_and_label("No. of row splits", "vertical_splits_input", "edit_selected_subplot", {"size": "5"});
-    let h_splits = make_input_and_label("No. of col. splits", "horiz_splits_input", "edit_selected_subplot", {"size": "5"});
+    let v_splits = make_input_and_label("No. of row splits", "vertical_splits_input", "split_row", {"size": "2.5"});
+    let h_splits = make_input_and_label("No. of col. splits", "horiz_splits_input", "split_row", {"size": "2.5"});
 
-    let v_spacing = make_input_and_label("Vert. spacing", "vert_split_spacing", "edit_selected_subplot", 
-      {"size": "5", "title": "Vertical spacing, in units of in text lines"});
+    let v_spacing = make_input_and_label("Vert. spacing", "vert_split_spacing", "split_row", 
+      {"size": "2.5", "title": "Vertical spacing, in units of in text lines"});
     v_spacing.input.val(3);
-    let h_spacing = make_input_and_label("Horiz. spacing", "horiz_split_spacing", "edit_selected_subplot", 
-      {"size": "5", "title": "Horizontal spacing, in units of in text lines"});
+    let h_spacing = make_input_and_label("Horiz. spacing", "horiz_split_spacing", "split_row", 
+      {"size": "2.5", "title": "Horizontal spacing, in units of in text lines"});
     h_spacing.input.val(3);
 
-    $("<button>").html("Split selected subplot").click(split_subplot).appendTo("#edit_selected_subplot");
-    $("<br>").appendTo("#edit_selected_subplot");
+    $("<button>").html("Split").click(split_subplot).appendTo("#split_row");
 
     // Alignment
-    let alignment_selector = $("<select>").attr({'id': "align_point"}).appendTo("#edit_selected_subplot");
+    let alignment_selector = $("<select>").attr({'id': "align_point"}).appendTo("#align_row");
     let alignment_options = ["left", "right", "top", "bottom", "horizontal center", "vertical center"];
     $(alignment_options).each(function() {
       alignment_selector.append($("<option>").attr('value', this).text(this));
     })
 
-    let align_btn_left = $("<button>")
+    let align_btn = $("<button>")
       .attr({"id": "align_left"}).html("Align")
-      .appendTo("#edit_selected_subplot");
-    align_btn_left.click(align_callback);
-
-    let align_select_second_label = $("<label>").attr({"id": "align_select_second_label"}).text("Select reference subplot for alignment")
-      .appendTo("#edit_selected_subplot");
-    align_select_second_label.hide();
+      .appendTo("#align_row");
+    align_btn.click(align_callback);
     
 
     // set HTML attributes. do this *after* you've added new elements to the doc
