@@ -691,6 +691,7 @@ for ax_idx, ltr, rect in axes_data:
       }
     } else {
       curr_cell.set_text(`# Select your plot below`);
+      current_letter = 'A';
     }
 
     Jupyter.notebook.select();
